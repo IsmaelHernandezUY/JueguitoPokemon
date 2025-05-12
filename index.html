@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Adivina el Pokémon</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background-color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      padding: 20px;
+      width: 350px;
+      text-align: center;
+    }
+    .pokemon-image {
+      width: 200px;
+      height: 200px;
+      object-fit: contain;
+      filter: brightness(0) saturate(100%);
+      margin-bottom: 20px;
+    }
+    input {
+      width: 90%;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #3498db;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    .feedback {
+      margin-top: 15px;
+      text-align: left;
+    }
+    .feedback p {
+      margin: 6px 0;
+    }
+    .correct {
+      color: green;
+      font-weight: bold;
+    }
+    .wrong {
+      color: red;
+      font-weight: bold;
+    }
+    .hint {
+      background-color: #f9f9f9;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .racha {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Adivina el Pokémon</h2>
+    <img id="pokemonImage" class="pokemon-image" src="" alt="Silueta del Pokémon"/>
+    <input type="text" id="guessInput" placeholder="Escribe el nombre del Pokémon" list="pokemonList" />
+    <datalist id="pokemonList"></datalist>
+    <button onclick="verificarRespuesta()">Adivinar</button>
+    <div class="feedback" id="feedback"></div>
+    <div class="racha" id="racha">Racha: 0</div>
+    <div class="hint" id="pistas"></div>
+  </div>
+
+  <script>
+    let allPokemons = [];
+    let pokemonCorrecto = null;
+    let detallesCorrectos = null;
+    let racha = 0;
+
+    async function obtenerTodosPokemons() {
+      const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1000");
+      const data = await res.json();
+      allPokemons = data.results;
+      const dataList = document.getElementById('pokemonList');
+      data.results.forEach(p => {
+        const option = document.createElement('option');
+        option.value = p.name;
+        dataList.appendChild(option);
+      });
+    }
+
+    async function obtenerDetallesPokemon(nombre) {
+      const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${nombre}`);
+      const data = await res.json();
+
+      const especieRes = await fetch(data.species.url);
+      const especieData = await especieRes.json();
+
+      return {
+        nombre: data.name,
+        tipos: data.types.map(t => t.type.name),
+        altura: data.height / 10,
+        peso: data.weight / 10,
+        habilidades: data.abilities.map(h => h.ability.name),
+        imagen: data.sprites.front_default,
+        generacion: await obtenerGeneracion(especieData.generation.url)
+      };
+    }
+
+    async function obtenerGeneracion(url) {
+      const res = await fetch(url);
+      const data = await res.json();
+      const num = data.name.match(/\d+/);
+      return num ? parseInt(num[0]) : 0;
+    }
+
+    async function iniciarJuego() {
+      const randomPokemon = allPokemons[Math.floor(Math.random() * allPokemons.length)];
+      detallesCorrectos = await obtenerDetallesPokemon(randomPokemon.name);
+      pokemonCorrecto = detallesCorrectos.nombre;
+      document.getElementById('pokemonImage').src = detallesCorrectos.imagen;
+      document.getElementById('pokemonImage').style.filter = "brightness(0) saturate(100%)";
+      document.getElementById('feedback').innerHTML = "";
+      document.getElementById('guessInput').value = "";
+      document.getElementById('pistas').innerHTML = `
+        <strong>Pistas iniciales:</strong><br>
+        - Tipos: ${detallesCorrectos.tipos.join(', ')}<br>
+        - Altura: ${detallesCorrectos.altura} m<br>
+        - Peso: ${detallesCorrectos.peso} kg
+      `;
+    }
+
+    async function verificarRespuesta() {
+      const input = document.getElementById('guessInput').value.trim().toLowerCase();
+      if (!input) return;
+
+      try {
+        const intento = await obtenerDetallesPokemon(input);
+
+        let feedbackHTML = `<p><strong>${intento.nombre}</strong></p>`;
+
+        // Tipo
+        const tipoMatch = intento.tipos.some(t => detallesCorrectos.tipos.includes(t));
+        feedbackHTML += `<p>Tipo: ${tipoMatch ? '✔ Coincide uno' : '✖ No coincide'}</p>`;
+
+        // Generación
+        if (intento.generacion < detallesCorrectos.generacion) {
+          feedbackHTML += `<p>Generación: 🔼 Más alta</p>`;
+        } else if (intento.generacion > detallesCorrectos.generacion) {
+          feedbackHTML += `<p>Generación: 🔽 Más baja</p>`;
+        } else {
+          feedbackHTML += `<p>Generación: ✔ Correcta</p>`;
+        }
+
+        // Altura aproximada
+        const diffAltura = Math.abs(intento.altura - detallesCorrectos.altura);
+        feedbackHTML += `<p>Altura: ${diffAltura <= 0.2 ? '✔ Muy cercana' : '✖ Diferente'}</p>`;
+
+        // Resultado
+        if (input === pokemonCorrecto) {
+          racha++;
+          document.getElementById('pokemonImage').style.filter = "none";
+          document.getElementById('feedback').innerHTML = `<p class="correct">¡Correcto! Era ${pokemonCorrecto}</p>` + feedbackHTML;
+          document.getElementById('racha').textContent = `Racha: ${racha}`;
+          setTimeout(() => iniciarJuego(), 2500);
+        } else {
+          document.getElementById('feedback').innerHTML = `<p class="wrong">Incorrecto</p>` + feedbackHTML;
+          racha = 0;
+          document.getElementById('racha').textContent = `Racha: ${racha}`;
+        }
+
+      } catch (error) {
+        document.getElementById('feedback').innerHTML = `<p class="wrong">Pokémon no válido</p>`;
+      }
+    }
+
+    window.onload = async () => {
+      await obtenerTodosPokemons();
+      await iniciarJuego();
+    };
+  </script>
+</body>
+</html>
